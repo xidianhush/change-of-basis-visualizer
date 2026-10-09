@@ -2,7 +2,7 @@ import { useLayoutEffect } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls, OrthographicCamera, PerspectiveCamera } from '@react-three/drei'
 import * as THREE from 'three'
-import type { Matrix } from '../lib/matrix'
+import type { CellId } from '../lib/motion'
 import AnimatedScene from './AnimatedScene'
 
 /** 2D 正交相机：根据画布宽高比固定可视范围 */
@@ -23,12 +23,12 @@ function Fit2D({ viewSize = 3.6 }: { viewSize?: number }) {
 
 export default function SceneCanvas({
   dim,
-  mapMatrix,
+  cell,
   pointColor,
   frameColor,
 }: {
   dim: 2 | 3
-  mapMatrix: Matrix
+  cell: CellId
   pointColor: string
   frameColor: string
 }) {
@@ -54,7 +54,7 @@ export default function SceneCanvas({
 
       <AnimatedScene
         dim={dim}
-        targetMap={mapMatrix}
+        cell={cell}
         pointColor={pointColor}
         frameColor={frameColor}
       />
