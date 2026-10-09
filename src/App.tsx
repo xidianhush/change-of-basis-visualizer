@@ -1,9 +1,13 @@
+import { useEffect } from 'react'
 import { Box, Boxes, Layers, MoveRight } from 'lucide-react'
 import InputPanel from './components/InputPanel'
 import DataPanel from './components/DataPanel'
 import ViewCell from './components/ViewCell'
+import AnimationControls from './components/AnimationControls'
 import LabViewport, { type Variant } from './three/LabViewport'
 import { useLabStore } from './store/useLabStore'
+
+const ANIM_SPEED = 0.22 // 每秒 progress 增量（约 4.5 秒完成一轮）
 
 const VIEWS: {
   title: string
@@ -49,6 +53,24 @@ const VIEWS: {
 
 export default function App() {
   const dim = useLabStore((s) => s.dim)
+  const isPlaying = useLabStore((s) => s.isPlaying)
+
+  // 播放：requestAnimationFrame 推进 progress，到达 1 后循环回 0
+  useEffect(() => {
+    if (!isPlaying) return
+    let raf: number
+    let last = performance.now()
+    const loop = (now: number) => {
+      raf = requestAnimationFrame(loop)
+      const { progress, setProgress } = useLabStore.getState()
+      let np = progress + ((now - last) / 1000) * ANIM_SPEED
+      last = now
+      if (np >= 1) np -= 1
+      setProgress(np)
+    }
+    raf = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(raf)
+  }, [isPlaying])
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
@@ -77,6 +99,7 @@ export default function App() {
 
         <main className="flex min-w-0 flex-1 flex-col">
           <DataPanel />
+          <AnimationControls />
 
           {/* 四宫格 2×2，每个视口独立 Canvas、共享 zustand 状态 */}
           <div className="grid min-h-0 flex-1 grid-cols-2 grid-rows-2 gap-3 p-3">

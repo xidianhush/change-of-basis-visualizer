@@ -28,10 +28,17 @@ interface LabState {
   similarityHolds: boolean
   errors: Errors
 
+  /** 时间轴驱动：动画进度 0~1 与播放状态 */
+  progress: number
+  isPlaying: boolean
+
   setLatex: (key: FieldKey, value: string) => void
   applyAll: () => void
   loadPreset: (preset: Preset) => void
   reset: () => void
+  setProgress: (t: number) => void
+  setPlaying: (on: boolean) => void
+  togglePlay: () => void
 }
 
 const FIELD_LABEL: Record<FieldKey, string> = {
@@ -146,6 +153,8 @@ const initialDerived = derive({
 export const useLabStore = create<LabState>((set, get) => ({
   ...initialDerived,
   latex: initialLatex,
+  progress: 0,
+  isPlaying: false,
 
   setLatex: (key, value) =>
     set((state) => ({ latex: { ...state.latex, [key]: value } })),
@@ -173,12 +182,13 @@ export const useLabStore = create<LabState>((set, get) => ({
         Pinv: null,
         expectedB: null,
         similarityHolds: false,
+        progress: 0,
         errors,
       })
       return
     }
 
-    set(derive(parsed))
+    set({ ...derive(parsed), progress: 0 })
   },
 
   loadPreset: (preset) =>
@@ -193,6 +203,7 @@ export const useLabStore = create<LabState>((set, get) => ({
       expectedB: computeSimilar(preset.A, preset.P),
       similarityHolds: true,
       errors: {},
+      progress: 0,
     }),
 
   reset: () => {
@@ -213,6 +224,14 @@ export const useLabStore = create<LabState>((set, get) => ({
       expectedB: I,
       similarityHolds: true,
       errors: {},
+      progress: 0,
+      isPlaying: false,
     })
   },
+
+  setProgress: (t) => set({ progress: Math.min(Math.max(t, 0), 1) }),
+
+  setPlaying: (on) => set({ isPlaying: on }),
+
+  togglePlay: () => set((s) => ({ isPlaying: !s.isPlaying })),
 }))

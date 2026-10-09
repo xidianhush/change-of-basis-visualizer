@@ -45,3 +45,16 @@ export function matricesApproxEqual(a: Matrix, b: Matrix, tol = 1e-6): boolean {
 export function isIdentity(a: Matrix, tol = 1e-6): boolean {
   return matricesApproxEqual(a, identity(a.length), tol)
 }
+
+/** 线性插值：输出 (1-t)·M1 + t·M2（逐元素） */
+export function lerpMatrix(M1: Matrix, M2: Matrix, t: number): Matrix {
+  const n = M1.length
+  const m = M1[0].length
+  const out: Matrix = []
+  for (let i = 0; i < n; i++) {
+    const row: number[] = []
+    for (let j = 0; j < m; j++) row.push((1 - t) * M1[i][j] + t * M2[i][j])
+    out.push(row)
+  }
+  return out
+}

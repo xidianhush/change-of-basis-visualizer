@@ -1,27 +1,21 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import type { Matrix } from '../lib/matrix'
-import {
-  frameEdges,
-  gridPoints,
-  transformPoint,
-  type Segment,
-} from '../lib/referenceGeometry'
+import { identity, type Matrix } from '../lib/matrix'
+import { buildMotion, matMul, matVecMul, motionMatrix } from '../lib/motion'
+import { frameEdges, gridPoints, type Segment } from '../lib/referenceGeometry'
+import { useLabStore } from '../store/useLabStore'
 
 const ARROW_COLORS = ['#f87171', '#4ade80', '#60a5fa']
 const HEAD_LENGTH = 0.16
 const HEAD_RADIUS = 0.07
-const DURATION = 700 // 补间时长（毫秒），墙钟确定、帧率无关
+
+export type ViewSpace = 'c1' | 'c2'
 
 type ArrowRefs = {
   group: THREE.Group | null
   shaft: THREE.Mesh | null
   cone: THREE.Mesh | null
-}
-
-function cloneMatrix(m: Matrix): Matrix {
-  return m.map((row) => [...row])
 }
 
 function column(m: Matrix, k: number, dim: 2 | 3): [number, number, number] {
@@ -34,39 +28,22 @@ const TMP_V = new THREE.Vector3()
 
 export default function AnimatedScene({
   dim,
-  targetMap,
+  view,
   pointColor,
   frameColor,
 }: {
   dim: 2 | 3
-  targetMap: Matrix
+  view: ViewSpace
   pointColor: string
   frameColor: string
 }) {
   const basePoints = useMemo(() => gridPoints(dim), [dim])
   const baseEdges = useMemo(() => frameEdges(dim), [dim])
 
-  // 当前显示矩阵：入场时从单位矩阵开始，之后保持并持续向目标 lerp
-  const currentRef = useRef<Matrix>(
-    cloneMatrix(
-      useMemo(() => {
-        const I: Matrix = Array.from({ length: dim }, () => new Array(dim).fill(0))
-        for (let i = 0; i < dim; i++) I[i][i] = 1
-        return I
-      }, [dim]),
-    ),
-  )
-
-  const targetRef = useRef(targetMap)
-  const startRef = useRef<Matrix | null>(null)
-  const startTimeRef = useRef(0)
-
-  // 目标矩阵变化时，以当前显示值为起点开启一次时间确定的补间
-  useEffect(() => {
-    startRef.current = cloneMatrix(currentRef.current)
-    startTimeRef.current = performance.now()
-    targetRef.current = targetMap
-  }, [targetMap])
+  // 订阅低频变化的矩阵（解析/预设切换时才更新）；progress 不走 React 路径
+  const P = useLabStore((s) => s.P)
+  const A = useLabStore((s) => s.A)
+  const Pinv = useLabStore((s) => s.Pinv)
 
   const pointsRef = useRef<THREE.Points>(null)
   const linesRef = useRef<THREE.LineSegments>(null)
@@ -74,7 +51,7 @@ export default function AnimatedScene({
     Array.from({ length: dim }, () => ({ group: null, shaft: null, cone: null })),
   )
 
-  // 初始 position 缓冲（按单位矩阵 = 规范点）
+  // 初始 position 缓冲（规范点）
   const pointPositions = useMemo(() => {
     const arr = new Float32Array(basePoints.length * 3)
     basePoints.forEach((p, i) => {
@@ -98,13 +75,19 @@ export default function AnimatedScene({
     return arr
   }, [baseEdges, dim])
 
-  /** 依据当前矩阵把几何写入 three 对象 */
+  // 缓存复合路径的三步关键矩阵（仅当 P / A / P⁻¹ 变化时重算）
+  const motion = useMemo(
+    () => buildMotion(P ?? identity(dim), A ?? identity(dim), Pinv ?? identity(dim)),
+    [P, A, Pinv, dim],
+  )
+
+  /** 依据当前矩阵把几何写入 three 对象（渲染循环高频调用） */
   function writeFrame(cur: Matrix) {
     // 点云
     if (pointsRef.current) {
       const attr = pointsRef.current.geometry.getAttribute('position') as THREE.BufferAttribute
       basePoints.forEach((p, i) => {
-        const q = transformPoint(cur, p)
+        const q = matVecMul(cur, p)
         attr.setXYZ(i, q[0], q[1], dim === 3 ? q[2] : 0)
       })
       attr.needsUpdate = true
@@ -114,8 +97,8 @@ export default function AnimatedScene({
     if (linesRef.current) {
       const attr = linesRef.current.geometry.getAttribute('position') as THREE.BufferAttribute
       baseEdges.forEach((seg: Segment, i) => {
-        const a = transformPoint(cur, seg[0])
-        const b = transformPoint(cur, seg[1])
+        const a = matVecMul(cur, seg[0])
+        const b = matVecMul(cur, seg[1])
         attr.setXYZ(i * 2, a[0], a[1], dim === 3 ? a[2] : 0)
         attr.setXYZ(i * 2 + 1, b[0], b[1], dim === 3 ? b[2] : 0)
       })
@@ -143,27 +126,13 @@ export default function AnimatedScene({
     }
   }
 
+  // 渲染循环：实时读取 progress → 计算 M(t) → 按视角映射 → 写几何
   useFrame(() => {
-    const target = targetRef.current
-    const start = startRef.current
-    const cur = currentRef.current
-
-    if (start) {
-      const p = Math.min((performance.now() - startTimeRef.current) / DURATION, 1)
-      // easeInOutCubic
-      const e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2
-      for (let i = 0; i < dim; i++) {
-        for (let j = 0; j < dim; j++) {
-          cur[i][j] = start[i][j] + (target[i][j] - start[i][j]) * e
-        }
-      }
-      if (p >= 1) startRef.current = null
-    } else {
-      for (let i = 0; i < dim; i++) {
-        for (let j = 0; j < dim; j++) cur[i][j] = target[i][j]
-      }
-    }
-    writeFrame(cur)
+    const { progress } = useLabStore.getState()
+    const M = motionMatrix(motion, progress)
+    // 坐标系2 视角需先映射回标准基：P·M(t)·v_new
+    const map = view === 'c2' ? matMul(motion.P, M) : M
+    writeFrame(map)
   })
 
   return (
@@ -193,12 +162,6 @@ export default function AnimatedScene({
 
       {/* 基向量箭头 */}
       {Array.from({ length: dim }).map((_, k) => {
-        const [x, y, z] = column(
-          currentRef.current,
-          k,
-          dim,
-        )
-        const length = Math.hypot(x, y, z) || 1
         return (
           <group
             key={k}
@@ -220,11 +183,7 @@ export default function AnimatedScene({
               />
             </mesh>
             <mesh
-              position={[
-                0,
-                Math.max(length - HEAD_LENGTH, 0) + HEAD_LENGTH / 2,
-                0,
-              ]}
+              position={[0, HEAD_LENGTH / 2, 0]}
               ref={(el) => {
                 arrowRefs.current[k].cone = el
               }}
