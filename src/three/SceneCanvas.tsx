@@ -26,11 +26,13 @@ export default function SceneCanvas({
   cell,
   pointColor,
   frameColor,
+  trackColor,
 }: {
   dim: 2 | 3
   cell: CellId
   pointColor: string
   frameColor: string
+  trackColor: string
 }) {
   return (
     <Canvas dpr={[1, 2]} gl={{ antialias: true, alpha: true }}>
@@ -57,6 +59,7 @@ export default function SceneCanvas({
         cell={cell}
         pointColor={pointColor}
         frameColor={frameColor}
+        trackColor={trackColor}
       />
 
       {dim === 2 && <Fit2D />}

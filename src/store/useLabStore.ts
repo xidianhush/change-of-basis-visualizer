@@ -38,11 +38,15 @@ interface LabState {
   progress: number
   isPlaying: boolean
 
-  /** 追踪向量（基坐标系数 v） */
-  vectorLatex: string
-  trackVector: number[] | null
-  vectorError: string | null
-  showVector: boolean
+  /** 追踪向量：v1 属于坐标系1，v2 属于坐标系2（均为各自基下的坐标系数） */
+  v1Latex: string
+  trackV1: number[] | null
+  v1Error: string | null
+  showV1: boolean
+  v2Latex: string
+  trackV2: number[] | null
+  v2Error: string | null
+  showV2: boolean
 
   setLatex: (key: FieldKey, value: string) => void
   applyAll: () => void
@@ -51,32 +55,47 @@ interface LabState {
   setProgress: (t: number) => void
   setPlaying: (on: boolean) => void
   togglePlay: () => void
-  setVectorLatex: (value: string) => void
-  setShowVector: (on: boolean) => void
+  setV1Latex: (value: string) => void
+  setV2Latex: (value: string) => void
+  setShowV1: (on: boolean) => void
+  setShowV2: (on: boolean) => void
 }
 
-/** 各维度默认追踪向量：2D [2;3]，3D [2;3;1] */
-export function defaultVectorLatex(dim: 2 | 3): string {
-  return vectorToLatex(dim === 3 ? [2, 3, 1] : [2, 3])
-}
-
-export function defaultVector(dim: 2 | 3): number[] {
+/** 坐标系1 默认追踪向量：2D [2;3]，3D [2;3;1] */
+export function defaultV1(dim: 2 | 3): number[] {
   return dim === 3 ? [2, 3, 1] : [2, 3]
 }
 
-/** 解析追踪向量 LaTeX，维度不匹配 / 语法错误时返回 null 与错误信息 */
-function resolveVector(
-  vectorLatex: string,
+/** 坐标系2 默认追踪向量：2D [1;2]，3D [1;2;1] */
+export function defaultV2(dim: 2 | 3): number[] {
+  return dim === 3 ? [1, 2, 1] : [1, 2]
+}
+
+export function defaultV1Latex(dim: 2 | 3): string {
+  return vectorToLatex(defaultV1(dim))
+}
+
+export function defaultV2Latex(dim: 2 | 3): string {
+  return vectorToLatex(defaultV2(dim))
+}
+
+/** 解析单个追踪向量 LaTeX，维度不匹配 / 语法错误时返回 value=null 与错误信息 */
+function resolveSlot(
+  latex: string,
   dim: 2 | 3,
-): { trackVector: number[] | null; vectorError: string | null } {
+): { value: number[] | null; error: string | null } {
   try {
-    return { trackVector: parseLatexVector(vectorLatex, dim), vectorError: null }
+    return { value: parseLatexVector(latex, dim), error: null }
   } catch (e) {
-    return {
-      trackVector: null,
-      vectorError: e instanceof ParseError ? e.message : '向量解析失败',
-    }
+    return { value: null, error: e instanceof ParseError ? e.message : '向量解析失败' }
   }
+}
+
+/** 一次解析两个追踪向量，返回可直接展开进 store 的字段 */
+function resolveBoth(v1Latex: string, v2Latex: string, dim: 2 | 3) {
+  const a = resolveSlot(v1Latex, dim)
+  const b = resolveSlot(v2Latex, dim)
+  return { trackV1: a.value, v1Error: a.error, trackV2: b.value, v2Error: b.error }
 }
 
 const FIELD_LABEL: Record<FieldKey, string> = {
@@ -187,18 +206,20 @@ const initialDerived = derive({
   a: initialPreset.A,
   b: initialPreset.B,
 })
-const initialVectorLatex = defaultVectorLatex(initialDerived.dim)
-const initialVector = resolveVector(initialVectorLatex, initialDerived.dim)
+const initialV1Latex = defaultV1Latex(initialDerived.dim)
+const initialV2Latex = defaultV2Latex(initialDerived.dim)
+const initialVectors = resolveBoth(initialV1Latex, initialV2Latex, initialDerived.dim)
 
 export const useLabStore = create<LabState>((set, get) => ({
   ...initialDerived,
   latex: initialLatex,
   progress: 0,
   isPlaying: false,
-  vectorLatex: initialVectorLatex,
-  trackVector: initialVector.trackVector,
-  vectorError: initialVector.vectorError,
-  showVector: true,
+  v1Latex: initialV1Latex,
+  v2Latex: initialV2Latex,
+  showV1: true,
+  showV2: true,
+  ...initialVectors,
   setLatex: (key, value) =>
     set((state) => ({ latex: { ...state.latex, [key]: value } })),
 
@@ -227,14 +248,14 @@ export const useLabStore = create<LabState>((set, get) => ({
         similarityHolds: false,
         progress: 0,
         errors,
-        ...resolveVector(get().vectorLatex, get().dim),
+        ...resolveBoth(get().v1Latex, get().v2Latex, get().dim),
       })
       return
     }
 
     set((s) => {
       const d = derive(parsed)
-      return { ...d, progress: 0, ...resolveVector(s.vectorLatex, d.dim) }
+      return { ...d, progress: 0, ...resolveBoth(s.v1Latex, s.v2Latex, d.dim) }
     })
   },
 
@@ -251,9 +272,14 @@ export const useLabStore = create<LabState>((set, get) => ({
       similarityHolds: true,
       errors: {},
       progress: 0,
-      vectorLatex: defaultVectorLatex(preset.dim),
-      trackVector: defaultVector(preset.dim),
-      vectorError: null,
+      v1Latex: defaultV1Latex(preset.dim),
+      v2Latex: defaultV2Latex(preset.dim),
+      trackV1: defaultV1(preset.dim),
+      trackV2: defaultV2(preset.dim),
+      v1Error: null,
+      v2Error: null,
+      showV1: true,
+      showV2: true,
     }),
 
   reset: () => {
@@ -276,9 +302,14 @@ export const useLabStore = create<LabState>((set, get) => ({
       errors: {},
       progress: 0,
       isPlaying: false,
-      vectorLatex: defaultVectorLatex(2),
-      trackVector: defaultVector(2),
-      vectorError: null,
+      v1Latex: defaultV1Latex(2),
+      v2Latex: defaultV2Latex(2),
+      trackV1: defaultV1(2),
+      trackV2: defaultV2(2),
+      v1Error: null,
+      v2Error: null,
+      showV1: true,
+      showV2: true,
     })
   },
 
@@ -288,8 +319,18 @@ export const useLabStore = create<LabState>((set, get) => ({
 
   togglePlay: () => set((s) => ({ isPlaying: !s.isPlaying })),
 
-  setVectorLatex: (value) =>
-    set((s) => ({ vectorLatex: value, ...resolveVector(value, s.dim) })),
+  setV1Latex: (value) =>
+    set((s) => {
+      const r = resolveSlot(value, s.dim)
+      return { v1Latex: value, trackV1: r.value, v1Error: r.error }
+    }),
 
-  setShowVector: (on) => set({ showVector: on }),
+  setV2Latex: (value) =>
+    set((s) => {
+      const r = resolveSlot(value, s.dim)
+      return { v2Latex: value, trackV2: r.value, v2Error: r.error }
+    }),
+
+  setShowV1: (on) => set({ showV1: on }),
+  setShowV2: (on) => set({ showV2: on }),
 }))

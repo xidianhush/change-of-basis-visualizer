@@ -18,8 +18,7 @@ const ARROW_COLORS = ['#f87171', '#4ade80', '#60a5fa']
 const HEAD_LENGTH = 0.16
 const HEAD_RADIUS = 0.07
 
-/** 追踪向量高亮样式（金色，区别于基向量与点云） */
-const TRACK_COLOR = '#fbbf24'
+/** 追踪向量箭头尺寸（颜色由各格 trackColor 传入：坐标系1金、坐标系2粉） */
 const TRACK_HEAD_LENGTH = 0.2
 const TRACK_HEAD_RADIUS = 0.095
 
@@ -64,11 +63,13 @@ export default function AnimatedScene({
   cell,
   pointColor,
   frameColor,
+  trackColor,
 }: {
   dim: 2 | 3
   cell: CellId
   pointColor: string
   frameColor: string
+  trackColor: string
 }) {
   const basePoints = useMemo(() => gridPoints(dim), [dim])
   const baseEdges = useMemo(() => frameEdges(dim), [dim])
@@ -179,11 +180,14 @@ export default function AnimatedScene({
     const state = useLabStore.getState()
     writeFrame(cellMatrixAt(endpoints, state.progress))
 
-    // 追踪向量：金色实线=当前向量，金色虚线=该格变换前向量，终点小球
+    // 追踪向量：坐标系1两格用 v1（金），坐标系2两格用 v2（粉）
+    // 实线=当前向量，虚线=该格变换前向量，小球=终点
     const grp = trackGroupRef.current
     if (grp) {
-      const v = state.trackVector
-      const valid = !!state.showVector && !!v && v.length === dim
+      const isC1 = cell === 'c1-before' || cell === 'c1-after'
+      const v = isC1 ? state.trackV1 : state.trackV2
+      const show = isC1 ? state.showV1 : state.showV2
+      const valid = !!show && !!v && v.length === dim
       grp.visible = valid
       if (valid && v) {
         const cur = trackVectorAt(trackEp, v, state.progress)
@@ -268,14 +272,14 @@ export default function AnimatedScene({
         </group>
       ))}
 
-      {/* 追踪向量（金色）：虚线=该格变换前，实线箭头=当前向量，小球=终点 */}
+      {/* 追踪向量（颜色随坐标系）：虚线=该格变换前，实线箭头=当前，小球=终点 */}
       <group ref={trackGroupRef} visible={false}>
         <lineSegments ref={trackDashRef}>
           <bufferGeometry>
             <bufferAttribute attach="attributes-position" args={[dashPositions, 3]} />
           </bufferGeometry>
           <lineDashedMaterial
-            color={TRACK_COLOR}
+            color={trackColor}
             dashSize={0.13}
             gapSize={0.08}
             transparent
@@ -297,8 +301,8 @@ export default function AnimatedScene({
           >
             <cylinderGeometry args={[0.032, 0.032, 1, 14]} />
             <meshStandardMaterial
-              color={TRACK_COLOR}
-              emissive={TRACK_COLOR}
+              color={trackColor}
+              emissive={trackColor}
               emissiveIntensity={0.35}
             />
           </mesh>
@@ -310,8 +314,8 @@ export default function AnimatedScene({
           >
             <coneGeometry args={[TRACK_HEAD_RADIUS, TRACK_HEAD_LENGTH, 18]} />
             <meshStandardMaterial
-              color={TRACK_COLOR}
-              emissive={TRACK_COLOR}
+              color={trackColor}
+              emissive={trackColor}
               emissiveIntensity={0.4}
             />
           </mesh>
@@ -320,8 +324,8 @@ export default function AnimatedScene({
         <mesh ref={trackTipRef}>
           <sphereGeometry args={[0.065, 18, 18]} />
           <meshStandardMaterial
-            color={TRACK_COLOR}
-            emissive={TRACK_COLOR}
+            color={trackColor}
+            emissive={trackColor}
             emissiveIntensity={0.5}
           />
         </mesh>

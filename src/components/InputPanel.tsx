@@ -44,45 +44,67 @@ function MatrixField({ fieldKey }: { fieldKey: FieldKey }) {
   )
 }
 
-/** 追踪向量（基坐标系数 v）LaTeX 输入字段 */
-function VectorField() {
-  const value = useLabStore((s) => s.vectorLatex)
-  const setVectorLatex = useLabStore((s) => s.setVectorLatex)
-  const error = useLabStore((s) => s.vectorError)
-  const showVector = useLabStore((s) => s.showVector)
-  const setShowVector = useLabStore((s) => s.setShowVector)
+/** 两个追踪向量输入槽位的文案与配色（v1 金=坐标系1，v2 粉=坐标系2） */
+const VECTOR_META = {
+  v1: {
+    label: '坐标系1 追踪向量 v₁',
+    hint: '在坐标系1中：basis1·v₁ → A·basis1·v₁',
+    wrap: 'border-amber-500/25 bg-amber-500/5',
+    title: 'text-amber-200',
+    icon: 'text-amber-400',
+    btnOn: 'border-amber-500/50 bg-amber-500/15 text-amber-300',
+    field: 'border-amber-500/30 focus:border-amber-500/70 focus:ring-amber-500/25',
+  },
+  v2: {
+    label: '坐标系2 追踪向量 v₂',
+    hint: '在坐标系2中：P·v₂ → P·B·v₂',
+    wrap: 'border-pink-500/25 bg-pink-500/5',
+    title: 'text-pink-200',
+    icon: 'text-pink-400',
+    btnOn: 'border-pink-500/50 bg-pink-500/15 text-pink-300',
+    field: 'border-pink-500/30 focus:border-pink-500/70 focus:ring-pink-500/25',
+  },
+} as const
+type VectorSlot = keyof typeof VECTOR_META
+
+/** 单个追踪向量（基坐标系数）LaTeX 输入字段 */
+function VectorField({ slot }: { slot: VectorSlot }) {
+  const m = VECTOR_META[slot]
+  const value = useLabStore((s) => (slot === 'v1' ? s.v1Latex : s.v2Latex))
+  const error = useLabStore((s) => (slot === 'v1' ? s.v1Error : s.v2Error))
+  const show = useLabStore((s) => (slot === 'v1' ? s.showV1 : s.showV2))
+  const setLatex = useLabStore((s) => (slot === 'v1' ? s.setV1Latex : s.setV2Latex))
+  const setShow = useLabStore((s) => (slot === 'v1' ? s.setShowV1 : s.setShowV2))
 
   return (
-    <div className="space-y-1.5 rounded-lg border border-amber-500/25 bg-amber-500/5 p-2.5">
+    <div className={`space-y-1.5 rounded-lg border p-2.5 ${m.wrap}`}>
       <div className="flex items-center justify-between">
-        <label className="flex items-center gap-1.5 text-xs font-medium text-amber-200">
-          <Crosshair className="h-3.5 w-3.5 text-amber-400" />
-          追踪向量（基坐标 v）
+        <label className={`flex items-center gap-1.5 text-xs font-medium ${m.title}`}>
+          <Crosshair className={`h-3.5 w-3.5 ${m.icon}`} />
+          {m.label}
         </label>
         <button
           type="button"
-          onClick={() => setShowVector(!showVector)}
-          title={showVector ? '隐藏追踪向量' : '显示追踪向量'}
+          onClick={() => setShow(!show)}
+          title={show ? '隐藏该追踪向量' : '显示该追踪向量'}
           className={`flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] transition ${
-            showVector
-              ? 'border-amber-500/50 bg-amber-500/15 text-amber-300'
-              : 'border-slate-700 text-slate-400 hover:text-slate-200'
+            show ? m.btnOn : 'border-slate-700 text-slate-400 hover:text-slate-200'
           }`}
         >
-          {showVector ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
-          {showVector ? '显示中' : '已隐藏'}
+          {show ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+          {show ? '显示中' : '已隐藏'}
         </button>
       </div>
 
       <textarea
         value={value}
-        onChange={(e) => setVectorLatex(e.target.value)}
+        onChange={(e) => setLatex(e.target.value)}
         spellCheck={false}
         rows={2}
         className={`w-full resize-none rounded-lg border bg-slate-950/70 p-2 font-mono text-[11px] leading-relaxed text-slate-200 outline-none transition focus:ring-1 ${
           error
             ? 'border-rose-500/70 focus:border-rose-500 focus:ring-rose-500/30'
-            : 'border-amber-500/30 focus:border-amber-500/70 focus:ring-amber-500/25'
+            : m.field
         }`}
       />
 
@@ -100,9 +122,7 @@ function VectorField() {
           {error}
         </p>
       )}
-      <p className="text-[10px] leading-snug text-slate-500">
-        同一基坐标 v：坐标系1 为 basis1·v → A·basis1·v；坐标系2 为 P·v → P·B·v。
-      </p>
+      <p className="text-[10px] leading-snug text-slate-500">{m.hint}</p>
     </div>
   )
 }
@@ -129,7 +149,8 @@ export default function InputPanel() {
         <MatrixField fieldKey="a" />
         <MatrixField fieldKey="b" />
 
-        <VectorField />
+        <VectorField slot="v1" />
+        <VectorField slot="v2" />
 
         {/* 预设 */}
         <div className="space-y-1.5">
