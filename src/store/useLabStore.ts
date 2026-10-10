@@ -59,6 +59,9 @@ interface LabState {
   setV2Latex: (value: string) => void
   setShowV1: (on: boolean) => void
   setShowV2: (on: boolean) => void
+  /** 统一镜头：四格使用同一居中视野并锁定平移缩放，便于直接比对同一坐标 */
+  uniformView: boolean
+  setUniformView: (on: boolean) => void
 }
 
 /** 坐标系1 默认追踪向量：2D [2;3]，3D [2;3;1] */
@@ -220,6 +223,7 @@ export const useLabStore = create<LabState>((set, get) => ({
   showV1: true,
   showV2: true,
   ...initialVectors,
+  uniformView: false,
   setLatex: (key, value) =>
     set((state) => ({ latex: { ...state.latex, [key]: value } })),
 
@@ -333,4 +337,6 @@ export const useLabStore = create<LabState>((set, get) => ({
 
   setShowV1: (on) => set({ showV1: on }),
   setShowV2: (on) => set({ showV2: on }),
+
+  setUniformView: (on) => set({ uniformView: on }),
 }))

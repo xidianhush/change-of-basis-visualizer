@@ -1,4 +1,4 @@
-import { Pause, Play, RotateCcw, Workflow } from 'lucide-react'
+import { Maximize2, Pause, Play, RotateCcw, Workflow } from 'lucide-react'
 import { useLabStore } from '../store/useLabStore'
 import { PHASE_COUNT, phaseOf } from '../lib/motion'
 
@@ -15,6 +15,8 @@ export default function AnimationControls() {
   const togglePlay = useLabStore((s) => s.togglePlay)
   const setProgress = useLabStore((s) => s.setProgress)
   const setPlaying = useLabStore((s) => s.setPlaying)
+  const uniformView = useLabStore((s) => s.uniformView)
+  const setUniformView = useLabStore((s) => s.setUniformView)
 
   const phase = phaseOf(progress)
   const { name, formula } = PHASES[phase]
@@ -87,6 +89,20 @@ export default function AnimationControls() {
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-700 text-slate-300 transition hover:bg-slate-800"
       >
         <RotateCcw className="h-3.5 w-3.5" />
+      </button>
+
+      {/* 统一镜头尺度：四格同一居中视野并锁定平移缩放，便于直接比对同一坐标 */}
+      <button
+        onClick={() => setUniformView(!uniformView)}
+        title="统一四个格子的镜头尺度与原点位置，使同一屏幕坐标在各格像素位置完全一致"
+        className={`flex h-7 shrink-0 items-center gap-1 rounded-md border px-2 text-[11px] transition ${
+          uniformView
+            ? 'border-cyan-500/60 bg-cyan-500/15 text-cyan-300'
+            : 'border-slate-700 text-slate-300 hover:bg-slate-800'
+        }`}
+      >
+        <Maximize2 className="h-3.5 w-3.5" />
+        统一镜头
       </button>
     </section>
   )
