@@ -6,6 +6,9 @@ import {
   cellEndpoints,
   cellMatrixAt,
   matVecMul,
+  trackEndpoints,
+  trackVectorAt,
+  trackOriginAt,
   type CellId,
 } from '../lib/motion'
 import { frameEdges, gridPoints, type Segment } from '../lib/referenceGeometry'
@@ -14,6 +17,11 @@ import { useLabStore } from '../store/useLabStore'
 const ARROW_COLORS = ['#f87171', '#4ade80', '#60a5fa']
 const HEAD_LENGTH = 0.16
 const HEAD_RADIUS = 0.07
+
+/** 追踪向量高亮样式（金色，区别于基向量与点云） */
+const TRACK_COLOR = '#fbbf24'
+const TRACK_HEAD_LENGTH = 0.2
+const TRACK_HEAD_RADIUS = 0.095
 
 type ArrowRefs = {
   group: THREE.Group | null
@@ -28,6 +36,28 @@ function column(m: Matrix, k: number, dim: 2 | 3): [number, number, number] {
 const UP = new THREE.Vector3(0, 1, 0)
 const TMP_Q = new THREE.Quaternion()
 const TMP_V = new THREE.Vector3()
+
+/** 将一个沿 +Y 建模的箭头缩放并朝向目标向量 (x,y,z) */
+function placeTrackArrow(refs: ArrowRefs, x: number, y: number, z: number) {
+  const length = Math.hypot(x, y, z)
+  if (!refs.group || !refs.shaft || !refs.cone) return
+  if (length < 1e-6) {
+    refs.group.visible = false
+    return
+  }
+  refs.group.visible = true
+  TMP_V.set(x / length, y / length, z / length)
+  TMP_Q.setFromUnitVectors(UP, TMP_V)
+  refs.group.quaternion.copy(TMP_Q)
+  const shaftLength = Math.max(length - TRACK_HEAD_LENGTH, 0)
+  refs.shaft.scale.y = shaftLength
+  refs.shaft.position.y = shaftLength / 2
+  refs.cone.position.y = shaftLength + TRACK_HEAD_LENGTH / 2
+}
+
+function vec3(v: number[], dim: 2 | 3): [number, number, number] {
+  return [v[0], v[1], dim === 3 ? v[2] : 0]
+}
 
 export default function AnimatedScene({
   dim,
@@ -48,10 +78,17 @@ export default function AnimatedScene({
   const A = useLabStore((s) => s.A)
   const P = useLabStore((s) => s.P)
   const B = useLabStore((s) => s.B)
+  // 追踪向量 / 开关在渲染循环中通过 getState() 每帧读取，无需订阅触发重渲染
 
   // 该格的动画起止矩阵（仅随输入矩阵变化重算）
   const endpoints = useMemo(
     () => cellEndpoints(cell, dim, { basis1, A, P, B }),
+    [cell, dim, basis1, A, P, B],
+  )
+
+  // 追踪向量专用的起止矩阵（右上终点为 A·basis1，右下终点为 P·B）
+  const trackEp = useMemo(
+    () => trackEndpoints(cell, dim, { basis1, A, P, B }),
     [cell, dim, basis1, A, P, B],
   )
 
@@ -60,6 +97,13 @@ export default function AnimatedScene({
   const arrowRefs = useRef<ArrowRefs[]>(
     Array.from({ length: dim }, () => ({ group: null, shaft: null, cone: null })),
   )
+
+  // 追踪向量相关对象
+  const trackGroupRef = useRef<THREE.Group>(null)
+  const trackArrow = useRef<ArrowRefs>({ group: null, shaft: null, cone: null })
+  const trackTipRef = useRef<THREE.Mesh>(null)
+  const trackDashRef = useRef<THREE.LineSegments>(null)
+  const dashPositions = useMemo(() => new Float32Array(6), [])
 
   // 初始 position 缓冲（规范点，t=0 起点）
   const pointPositions = useMemo(() => {
@@ -132,8 +176,34 @@ export default function AnimatedScene({
 
   // 渲染循环：实时读取滑块进度，仅在该格所属段内插值，其余时间保持首/尾态
   useFrame(() => {
-    const { progress } = useLabStore.getState()
-    writeFrame(cellMatrixAt(endpoints, progress))
+    const state = useLabStore.getState()
+    writeFrame(cellMatrixAt(endpoints, state.progress))
+
+    // 追踪向量：金色实线=当前向量，金色虚线=该格变换前向量，终点小球
+    const grp = trackGroupRef.current
+    if (grp) {
+      const v = state.trackVector
+      const valid = !!state.showVector && !!v && v.length === dim
+      grp.visible = valid
+      if (valid && v) {
+        const cur = trackVectorAt(trackEp, v, state.progress)
+        const org = trackOriginAt(trackEp, v)
+        const [cx, cy, cz] = vec3(cur, dim)
+        const [ox, oy, oz] = vec3(org, dim)
+
+        placeTrackArrow(trackArrow.current, cx, cy, cz)
+        if (trackTipRef.current) trackTipRef.current.position.set(cx, cy, cz)
+
+        if (trackDashRef.current) {
+          const attr = trackDashRef.current.geometry.getAttribute(
+            'position',
+          ) as THREE.BufferAttribute
+          attr.setXYZ(1, ox, oy, oz)
+          attr.needsUpdate = true
+          trackDashRef.current.computeLineDistances()
+        }
+      }
+    }
   })
 
   return (
@@ -197,6 +267,65 @@ export default function AnimatedScene({
           </mesh>
         </group>
       ))}
+
+      {/* 追踪向量（金色）：虚线=该格变换前，实线箭头=当前向量，小球=终点 */}
+      <group ref={trackGroupRef} visible={false}>
+        <lineSegments ref={trackDashRef}>
+          <bufferGeometry>
+            <bufferAttribute attach="attributes-position" args={[dashPositions, 3]} />
+          </bufferGeometry>
+          <lineDashedMaterial
+            color={TRACK_COLOR}
+            dashSize={0.13}
+            gapSize={0.08}
+            transparent
+            opacity={0.55}
+            depthWrite={false}
+          />
+        </lineSegments>
+
+        <group
+          ref={(el) => {
+            trackArrow.current.group = el
+          }}
+        >
+          <mesh
+            position={[0, 0.5, 0]}
+            ref={(el) => {
+              trackArrow.current.shaft = el
+            }}
+          >
+            <cylinderGeometry args={[0.032, 0.032, 1, 14]} />
+            <meshStandardMaterial
+              color={TRACK_COLOR}
+              emissive={TRACK_COLOR}
+              emissiveIntensity={0.35}
+            />
+          </mesh>
+          <mesh
+            position={[0, TRACK_HEAD_LENGTH / 2, 0]}
+            ref={(el) => {
+              trackArrow.current.cone = el
+            }}
+          >
+            <coneGeometry args={[TRACK_HEAD_RADIUS, TRACK_HEAD_LENGTH, 18]} />
+            <meshStandardMaterial
+              color={TRACK_COLOR}
+              emissive={TRACK_COLOR}
+              emissiveIntensity={0.4}
+            />
+          </mesh>
+        </group>
+
+        <mesh ref={trackTipRef}>
+          <sphereGeometry args={[0.065, 18, 18]} />
+          <meshStandardMaterial
+            color={TRACK_COLOR}
+            emissive={TRACK_COLOR}
+            emissiveIntensity={0.5}
+          />
+        </mesh>
+      </group>
     </group>
   )
 }

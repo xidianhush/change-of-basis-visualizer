@@ -110,3 +110,43 @@ export function cellMatrixAt(ep: CellEndpoints, t: number): Matrix {
   const local = clamp01(t * PHASE_COUNT - ep.phase)
   return lerpMatrix(ep.start, ep.end, local)
 }
+
+/**
+ * 追踪向量（基坐标系数 v）在各格的动画起止矩阵（屏幕标准基坐标）。
+ * 与点云的区别仅在右上：点云终点是 A（参考点为标准网格点），
+ * 而追踪向量先要在坐标系1中取到 basis1·v，再被 A 作用，故终点为 A·basis1。
+ *   左上 c1-before：I → basis1
+ *   右上 c1-after ：basis1 → A·basis1   （即 basis1·v → A·basis1·v）
+ *   左下 c2-before：basis1 → P          （即 basis1·v → P·v）
+ *   右下 c2-after ：P → P·B             （即 P·v → P·B·v，注意是 P·B 而非 B·P）
+ */
+export function trackEndpoints(cell: CellId, dim: number, mats: CellMatrices): CellEndpoints {
+  const I = identity(dim)
+  const E = mats.basis1 ?? I
+  const A = mats.A ?? I
+  const P = mats.P ?? I
+  const B = mats.B ?? I
+  const AE = matMul(A, E)
+  const PB = matMul(P, B)
+
+  switch (cell) {
+    case 'c1-before':
+      return { start: I, end: E, phase: 0 }
+    case 'c1-after':
+      return { start: E, end: AE, phase: 1 }
+    case 'c2-before':
+      return { start: E, end: P, phase: 2 }
+    case 'c2-after':
+      return { start: P, end: PB, phase: 3 }
+  }
+}
+
+/** 追踪向量在滑块 t 下当前的屏幕坐标（基坐标 v → 屏幕向量） */
+export function trackVectorAt(ep: CellEndpoints, v: number[], t: number): number[] {
+  return matVecMul(cellMatrixAt(ep, t), v)
+}
+
+/** 追踪向量在该格的变换前屏幕坐标（虚线参考向量） */
+export function trackOriginAt(ep: CellEndpoints, v: number[]): number[] {
+  return matVecMul(ep.start, v)
+}

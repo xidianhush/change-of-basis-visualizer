@@ -18,13 +18,13 @@ function preprocessExpr(raw: string): string {
 }
 
 /**
- * 解析 LaTeX 矩阵（bmatrix / pmatrix / matrix），返回二维数值数组。
- * 仅接受 2×2 或 3×3 方阵。
+ * 解析 LaTeX 矩阵环境（bmatrix / pmatrix / matrix）的正文，返回二维数值数组。
+ * 仅保证行宽一致、元素为有限数值；不强制方阵（向量为 n×1）。
  */
-export function parseLatexMatrix(input: string): Matrix {
+export function parseLatexArray(input: string): Matrix {
   const text = input ?? ''
   const envMatch = text.match(
-    /\\begin\s*\{(?:bmatrix|pmatrix|matrix)\}([\s\S]*?)\\end\s*\{(?:bmatrix|pmatrix|matrix)\}/,
+    /\\begin\s*\{(?:bmatrix|pmatrix|matrix|vmatrix|vector|column)\}([\s\S]*?)\\end\s*\{(?:bmatrix|pmatrix|matrix|vmatrix|vector|column)\}/,
   )
   const body = envMatch ? envMatch[1] : text
 
@@ -62,10 +62,34 @@ export function parseLatexMatrix(input: string): Matrix {
     result.push(values)
   }
 
+  return result
+}
+
+/**
+ * 解析 LaTeX 矩阵（bmatrix / pmatrix / matrix），返回二维数值数组。
+ * 仅接受 2×2 或 3×3 方阵。
+ */
+export function parseLatexMatrix(input: string): Matrix {
+  const result = parseLatexArray(input)
   const n = result.length
+  const width = result[0].length
   if (width !== n) throw new ParseError('矩阵必须为方阵（行数 = 列数）')
   if (n !== 2 && n !== 3) throw new ParseError('仅支持 2×2 或 3×3 矩阵')
   return result
+}
+
+/**
+ * 解析 LaTeX 列向量（接受 dim×1 列向量，或 1×dim 行向量），返回长度为 dim 的 number[]。
+ */
+export function parseLatexVector(input: string, dim: 2 | 3): number[] {
+  const m = parseLatexArray(input)
+  const rows = m.length
+  const cols = m[0].length
+  const example = dim === 3 ? '2 \\\\ 3 \\\\ 1' : '2 \\\\ 3'
+
+  if (cols === 1 && rows === dim) return m.map((r) => r[0])
+  if (rows === 1 && cols === dim) return m[0]
+  throw new ParseError(`向量必须是 ${dim} 维列向量，例如 \\begin{bmatrix} ${example} \\end{bmatrix}`)
 }
 
 /** 数值显示格式化：消除浮点尾差，整数不带小数点，其余最多 4 位小数 */
@@ -84,4 +108,10 @@ export function matrixToLatex(m: Matrix | null | undefined): string {
   if (!m || m.length === 0) return '\\text{—}'
   const rows = m.map((row) => row.map(formatNumber).join(' & ')).join(' \\\\ ')
   return `\\begin{bmatrix} ${rows} \\end{bmatrix}`
+}
+
+/** 将数值向量转回 LaTeX 列向量字符串（供 KaTeX 渲染） */
+export function vectorToLatex(v: number[] | null | undefined): string {
+  if (!v || v.length === 0) return '\\text{—}'
+  return `\\begin{bmatrix} ${v.map(formatNumber).join(' \\\\ ')} \\end{bmatrix}`
 }

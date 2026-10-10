@@ -1,4 +1,5 @@
-import { Braces, Play, RotateCcw, Sparkles, TriangleAlert } from 'lucide-react'
+import { Braces, Crosshair, Eye, EyeOff, Play, RotateCcw, Sparkles, TriangleAlert } from 'lucide-react'
+import { BlockMath } from 'react-katex'
 import { useLabStore, type FieldKey } from '../store/useLabStore'
 import { PRESETS } from '../lib/presets'
 
@@ -43,6 +44,69 @@ function MatrixField({ fieldKey }: { fieldKey: FieldKey }) {
   )
 }
 
+/** 追踪向量（基坐标系数 v）LaTeX 输入字段 */
+function VectorField() {
+  const value = useLabStore((s) => s.vectorLatex)
+  const setVectorLatex = useLabStore((s) => s.setVectorLatex)
+  const error = useLabStore((s) => s.vectorError)
+  const showVector = useLabStore((s) => s.showVector)
+  const setShowVector = useLabStore((s) => s.setShowVector)
+
+  return (
+    <div className="space-y-1.5 rounded-lg border border-amber-500/25 bg-amber-500/5 p-2.5">
+      <div className="flex items-center justify-between">
+        <label className="flex items-center gap-1.5 text-xs font-medium text-amber-200">
+          <Crosshair className="h-3.5 w-3.5 text-amber-400" />
+          追踪向量（基坐标 v）
+        </label>
+        <button
+          type="button"
+          onClick={() => setShowVector(!showVector)}
+          title={showVector ? '隐藏追踪向量' : '显示追踪向量'}
+          className={`flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] transition ${
+            showVector
+              ? 'border-amber-500/50 bg-amber-500/15 text-amber-300'
+              : 'border-slate-700 text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          {showVector ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+          {showVector ? '显示中' : '已隐藏'}
+        </button>
+      </div>
+
+      <textarea
+        value={value}
+        onChange={(e) => setVectorLatex(e.target.value)}
+        spellCheck={false}
+        rows={2}
+        className={`w-full resize-none rounded-lg border bg-slate-950/70 p-2 font-mono text-[11px] leading-relaxed text-slate-200 outline-none transition focus:ring-1 ${
+          error
+            ? 'border-rose-500/70 focus:border-rose-500 focus:ring-rose-500/30'
+            : 'border-amber-500/30 focus:border-amber-500/70 focus:ring-amber-500/25'
+        }`}
+      />
+
+      <div className="flex items-center justify-center overflow-x-auto rounded-md bg-slate-950/60 py-1 text-xs">
+        {error ? (
+          <span className="font-mono text-[10px] text-rose-400">向量格式错误</span>
+        ) : (
+          <BlockMath math={value} />
+        )}
+      </div>
+
+      {error && (
+        <p className="flex items-start gap-1 text-[10px] leading-snug text-rose-400">
+          <TriangleAlert className="mt-px h-3 w-3 shrink-0" />
+          {error}
+        </p>
+      )}
+      <p className="text-[10px] leading-snug text-slate-500">
+        同一基坐标 v：坐标系1 为 basis1·v → A·basis1·v；坐标系2 为 P·v → P·B·v。
+      </p>
+    </div>
+  )
+}
+
 export default function InputPanel() {
   const applyAll = useLabStore((s) => s.applyAll)
   const loadPreset = useLabStore((s) => s.loadPreset)
@@ -64,6 +128,8 @@ export default function InputPanel() {
         <MatrixField fieldKey="p" />
         <MatrixField fieldKey="a" />
         <MatrixField fieldKey="b" />
+
+        <VectorField />
 
         {/* 预设 */}
         <div className="space-y-1.5">
